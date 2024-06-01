@@ -5,7 +5,6 @@ const { MongoClient, ObjectId, ServerApiVersion } = require("mongodb");
 const port = process.env.PORT || 4549;
 const mongoURI = process.env.MONGO_URI;
 const jwt = require("jsonwebtoken");
-const cookieParser = require("cookie-parser");
 const secret_token = process.env.ACCESS_TOKEN_SECRET;
 
 //app
@@ -15,15 +14,11 @@ const app = express();
 app.use(
   cors({
     origin: [
-      "http://localhost:5173",
-      "https://bookify-library.netlify.app",
-      "https://bookify-library-client.firebaseapp.com",
-    ],
-    credentials: true,
+      "http://localhost:5173"
+    ]
   })
 );
 app.use(express.json());
-app.use(cookieParser());
 
 //mongo client
 const client = new MongoClient(mongoURI, {
@@ -34,38 +29,31 @@ const client = new MongoClient(mongoURI, {
   },
 });
 
-//custom  middlewares
-const verifyToken = (req, res, next) => {
-  const token = req.cookies?.token;
-  if (!token) {
-    // console.log('token nei')
-    return res.status(401).send({ message: "Forbidden Access!" });
-  }
-  jwt.verify(token, secret_token, (error, decoded) => {
-    if (error) {
-      // console.log('token nosto')
-      return res.status(401).send({ message: "Forbidden Access!" });
+    // middlewares 
+    const verifyToken = (req, res, next) => {
+      if (!req.headers.authorization) {
+        return res.status(401).send({ message: 'unauthorized access' });
+      }
+      const token = req.headers.authorization.split(' ')[1];
+      jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+        if (err) {
+          return res.status(401).send({ message: 'unauthorized access' })
+        }
+        req.decoded = decoded;
+        next();
+      })
     }
-    req.user = decoded;
-    next();
-  });
-};
-
-//cookies options
-const cookieOptions = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-};
 
 const run = async () => {
   try {
-    // await client.connect();
-
-    // await client.db("admin").command({ ping: 1 });
-    // console.log(
-    //   "Pinged your deployment. You successfully connected to MongoDB!"
-    // );
+    // jwt related api
+    app.post("/jwt", async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, secret_token, {
+        expiresIn: "24h",
+      });
+      res.send({ token });
+    });
   } finally {
   }
 };
