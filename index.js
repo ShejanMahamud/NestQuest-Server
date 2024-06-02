@@ -47,6 +47,7 @@ const run = async () => {
     //collections
     const usersCollection = client.db("nestquest").collection("users");
     const advertiseCollection = client.db('nestquest').collection('advertise')
+    const reviewsCollection = client.db('nestquest').collection('reviews')
 
     //get users from db
     app.get('/users',async(req,res)=>{
@@ -58,6 +59,12 @@ const run = async () => {
     app.get('/user/:email',async(req,res)=>{
       const query = {email: req.params.email}
       const result = await usersCollection.findOne(query)
+      res.send(result)
+    })
+
+    //get reviews from db
+    app.get('/reviews',async(req,res)=>{
+      const result = await reviewsCollection.find().toArray();
       res.send(result)
     })
 
