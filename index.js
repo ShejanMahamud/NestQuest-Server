@@ -46,81 +46,116 @@ const run = async () => {
   try {
     //collections
     const usersCollection = client.db("nestquest").collection("users");
-    const advertiseCollection = client.db('nestquest').collection('advertise')
-    const reviewsCollection = client.db('nestquest').collection('reviews')
-    const propertiesCollection = client.db('nestquest').collection('properties')
+    const advertiseCollection = client.db("nestquest").collection("advertise");
+    const reviewsCollection = client.db("nestquest").collection("reviews");
+    const propertiesCollection = client
+      .db("nestquest")
+      .collection("properties");
 
     //get users from db
-    app.get('/users',async(req,res)=>{
-      const result = await usersCollection.find().toArray()
-      res.send(result)
-    })
+    app.get("/users", async (req, res) => {
+      const result = await usersCollection.find().toArray();
+      res.send(result);
+    });
 
     //get a single user from db
-    app.get('/user/:email',async(req,res)=>{
-      const query = {email: req.params.email}
-      const result = await usersCollection.findOne(query)
-      res.send(result)
-    })
+    app.get("/user/:email", async (req, res) => {
+      const query = { email: req.params.email };
+      const result = await usersCollection.findOne(query);
+      res.send(result);
+    });
 
-    //get all properties from db
-    app.get('/properties',async(req,res)=>{
-      let query = {};
-      if(req.query.verified){
-        query = {property_status: 'Verified'}
+    //get all properties from db based on verified status and agent not fraud
+    app.get("/properties", async (req, res) => {
+      try {
+        const result = await propertiesCollection
+          .aggregate([
+            {
+              $match: { property_status: "Verified" },
+            },
+            {
+              $lookup: {
+                from: "users",
+                localField: "agent_email",
+                foreignField: "email",
+                as: "agent_info",
+              },
+            },
+            {
+              $unwind: "$agent_info",
+            },
+            {
+              $match: {
+                "agent_info.status": { $ne: "Fraud" },
+              },
+            },
+            {
+              $project: {
+                agent_info: 0,
+              },
+            },
+          ])
+          .toArray();
+        res.send(result);
+      } catch (error) {
+        res.send({ error: error });
       }
-      const result = await propertiesCollection.find(query).toArray()
+    });
+
+    //get all properties with no condition
+    app.get("/all_properties", async (req, res) => {
+      const result = await propertiesCollection.find().toArray();
       res.send(result)
-    })
+    });
 
     //get agent based properties
-    app.get('/properties/:email',async(req,res)=>{
-      const query = {agent_email: req.params.email}
+    app.get("/properties/:email", async (req, res) => {
+      const query = { agent_email: req.params.email };
       const result = await propertiesCollection.find(query).toArray();
-      res.send(result)
-    })
+      res.send(result);
+    });
 
     //get a single property based on id
-    app.get('/property/:id',async(req,res)=>{
-      const query = {_id : new ObjectId(req.params.id)};
-      const result = await propertiesCollection.findOne(query)
-      res.send(result)
-    })
+    app.get("/property/:id", async (req, res) => {
+      const query = { _id: new ObjectId(req.params.id) };
+      const result = await propertiesCollection.findOne(query);
+      res.send(result);
+    });
 
     //get role for a user
-    app.get('/role/:email',async(req,res)=>{
-      const query = {email: req.params.email}
-      const result = await usersCollection.findOne(query)
-      res.send({role: result.role})
-    })
+    app.get("/role/:email", async (req, res) => {
+      const query = { email: req.params.email };
+      const result = await usersCollection.findOne(query);
+      res.send({ role: result.role });
+    });
 
     //get reviews from db
-    app.get('/reviews',async(req,res)=>{
+    app.get("/reviews", async (req, res) => {
       const result = await reviewsCollection.find().toArray();
-      res.send(result)
-    })
+      res.send(result);
+    });
 
     //get advertise from db
-    app.get('/advertises',async(req,res)=>{
+    app.get("/advertises", async (req, res) => {
       const result = await advertiseCollection.find().toArray();
-      res.send(result)
-    })
+      res.send(result);
+    });
 
     //save a property in db
-    app.post('/properties',async(req,res)=>{
+    app.post("/properties", async (req, res) => {
       const property = req.body;
-      const result = await propertiesCollection.insertOne(property)
-      if(result.insertedId){
-        res.send({success: true})
+      const result = await propertiesCollection.insertOne(property);
+      if (result.insertedId) {
+        res.send({ success: true });
       }
-    })
+    });
 
     //save a user in db in register
-    app.post('/users',async(req,res)=>{
+    app.post("/users", async (req, res) => {
       const user = req.body;
-      const result = await usersCollection.insertOne(user)
-      res.send(result)
-    })
+      const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
 
     // jwt related api
     app.post("/jwt", async (req, res) => {
@@ -132,47 +167,47 @@ const run = async () => {
     });
 
     //update a user
-    app.patch('/user/:email',async(req,res) => {
-      try{
+    app.patch("/user/:email", async (req, res) => {
+      try {
         const user = req.body;
-      const query = {email: req.params.email}
-      const updateUser = {
-        $set: {}
-      }
-      for(const key in user){
-        if(user.hasOwnProperty(key)){
-          updateUser.$set[key] = user[key]
+        const query = { email: req.params.email };
+        const updateUser = {
+          $set: {},
+        };
+        for (const key in user) {
+          if (user.hasOwnProperty(key)) {
+            updateUser.$set[key] = user[key];
+          }
         }
+        const result = await usersCollection.updateOne(query, updateUser);
+        if (result.modifiedCount > 0) {
+          res.send({ success: true });
+        }
+      } catch (error) {
+        res.send({ success: false });
       }
-      const result = await usersCollection.updateOne(query,updateUser)
-      if(result.modifiedCount > 0){
-        res.send({success: true})
-      }
-      }
-      catch(error){
-        res.send({success: false})
-      }
-    })
+    });
 
     //update a property from agent dashbaord
-    app.patch('/property/:id',async(req,res)=>{
-      try{
+    app.patch("/property/:id", async (req, res) => {
+      try {
         const property = req.body;
-        console.log(property)
-      const query = {_id: new ObjectId(req.params.id)}
-      const updateProperty = {
-        $set:property
+        console.log(property);
+        const query = { _id: new ObjectId(req.params.id) };
+        const updateProperty = {
+          $set: property,
+        };
+        const result = await propertiesCollection.updateOne(
+          query,
+          updateProperty
+        );
+        if (result.modifiedCount > 0) {
+          res.send({ success: true });
+        }
+      } catch (error) {
+        res.send({ success: false });
       }
-      const result = await propertiesCollection.updateOne(query,updateProperty)
-      if(result.modifiedCount > 0){
-        res.send({success: true})
-      }
-      }
-      catch(error){
-        res.send({success:false})
-      }
-    })
-
+    });
   } finally {
   }
 };
