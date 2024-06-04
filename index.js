@@ -48,6 +48,7 @@ const run = async () => {
     const usersCollection = client.db("nestquest").collection("users");
     const advertiseCollection = client.db("nestquest").collection("advertise");
     const reviewsCollection = client.db("nestquest").collection("reviews");
+    const wishlistCollection = client.db("nestquest").collection("wishlist");
     const propertiesCollection = client
       .db("nestquest")
       .collection("properties");
@@ -123,7 +124,8 @@ const run = async () => {
     });
 
     //get role for a user
-    app.get("/role/:email", async (req, res) => {
+    app.get("/role/:email",verifyToken, async (req, res) => {
+      console.log(req.decoded)
       const query = { email: req.params.email };
       const result = await usersCollection.findOne(query);
       res.send({ role: result.role });
@@ -178,6 +180,35 @@ const run = async () => {
       res.send(result);
     });
 
+    //get all reviews from db
+    app.get('/all_reviews',async(req,res)=>{
+      const result = await reviewsCollection.aggregate([
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'user_email',
+            foreignField: 'email',
+            as: 'user_info'
+          }
+        },
+        {
+          $unwind: '$user_info'
+        },
+          {
+            $project: {
+              review_title: 1,
+              review_description: 1,
+              review_rating: 1,
+              // property_id: 0,
+              // user_email: 0,
+              user_name: "$user_info.name",
+              user_photo: "$user_info.photo"
+            }
+          }
+      ]).toArray()
+      res.send(result)
+    })
+
     //get advertise from db
     app.get("/advertises", async (req, res) => {
       const result = await advertiseCollection.find().toArray();
@@ -192,6 +223,15 @@ const run = async () => {
         res.send({ success: true });
       }
     });
+
+    //set a property as a wishlist
+    app.post('/wishlist',async(req,res)=>{
+      const wishlist = req.body;
+      const result = await wishlistCollection.insertOne(wishlist)
+      if(result.insertedId){
+        res.send({success: true})
+      }
+    })
 
     //save a property in db
     app.post("/properties", async (req, res) => {
