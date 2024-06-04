@@ -105,7 +105,7 @@ const run = async () => {
     //get all properties with no condition
     app.get("/all_properties", async (req, res) => {
       const result = await propertiesCollection.find().toArray();
-      res.send(result)
+      res.send(result);
     });
 
     //get agent based properties
@@ -130,8 +130,51 @@ const run = async () => {
     });
 
     //get reviews from db
-    app.get("/reviews", async (req, res) => {
-      const result = await reviewsCollection.find().toArray();
+    app.get("/reviews/:id", async (req, res) => {
+      const result = await reviewsCollection.aggregate([
+        {
+          $match: {property_id: req.params.id}
+        },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'user_email',
+            foreignField: 'email',
+            as: 'user_info'
+          }
+        },
+        {
+          $unwind: '$user_info'
+        },
+        {
+          $project: {
+            review_title: 1,
+            review_description: 1,
+            review_rating: 1,
+            property_id: 1,
+            user_email: 1,
+            user_name: "$user_info.name",
+            user_photo: "$user_info.photo"
+          }
+        },
+        {
+          $group:{
+            _id: '$property_id',
+            average_rating: {$avg: '$review_rating'},
+            review_count: {$sum : 1},
+            reviews: {$push: '$$ROOT'}
+          }
+        },
+        {
+          $project: {
+            _id: 0,
+            property_id: "$_id",
+            average_rating: 1,
+            review_count: 1,
+            reviews: 1
+          }
+        }
+      ]).toArray();
       res.send(result);
     });
 
@@ -139,6 +182,15 @@ const run = async () => {
     app.get("/advertises", async (req, res) => {
       const result = await advertiseCollection.find().toArray();
       res.send(result);
+    });
+
+    //post a review on db
+    app.post("/reviews", async (req, res) => {
+      const review = req.body;
+      const result = await reviewsCollection.insertOne(review);
+      if (result.insertedId) {
+        res.send({ success: true });
+      }
     });
 
     //save a property in db
