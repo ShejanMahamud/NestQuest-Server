@@ -369,6 +369,11 @@ const run = async () => {
 
     //change status of offered property
     app.patch('/offered/:id',async(req,res)=>{
+      if(req.body.status === 'Verified'){
+        const result = await offeredCollection.updateMany({property_id: req.body.property_id},{
+          $set: {status: 'Rejected'}
+        })
+      }
       const result = await offeredCollection.updateOne({_id: new ObjectId(req.params.id)},{
         $set: req.body
       })
