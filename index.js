@@ -49,6 +49,7 @@ const run = async () => {
     const advertiseCollection = client.db("nestquest").collection("advertise");
     const reviewsCollection = client.db("nestquest").collection("reviews");
     const wishlistCollection = client.db("nestquest").collection("wishlist");
+    const offeredCollection = client.db("nestquest").collection("offered");
     const propertiesCollection = client
       .db("nestquest")
       .collection("properties");
@@ -224,6 +225,13 @@ const run = async () => {
       }
     });
 
+    //get wishlists based on user email
+    app.get('/wishlist/:email',async(req,res)=>{
+      const query = {user_email: req.params.email}
+      const result = await wishlistCollection.find(query).toArray()
+      res.send(result)
+    })
+
     //set a property as a wishlist
     app.post('/wishlist',async(req,res)=>{
       const wishlist = req.body;
@@ -231,6 +239,14 @@ const run = async () => {
       if(result.insertedId){
         res.send({success: true})
       }
+    })
+
+    //set a offered property to database
+    app.post('/offered',async(req,res)=>{
+      const result = await offeredCollection.insertOne(req.body)
+      if(result.insertedId){
+        res.send({success:true})
+      }s
     })
 
     //save a property in db
