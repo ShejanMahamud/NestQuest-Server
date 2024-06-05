@@ -6,7 +6,7 @@ const port = process.env.PORT || 4549;
 const mongoURI = process.env.MONGO_URI;
 const jwt = require("jsonwebtoken");
 const secret_token = process.env.ACCESS_TOKEN_SECRET;
-
+const stripe = require('stripe')(process.env.ST_SECRET_KEY)
 //app
 const app = express();
 
@@ -246,6 +246,12 @@ const run = async () => {
       res.send(result)
     })
 
+    //get a offered properties based on id
+    app.get('/offered/:id',async(req,res)=>{
+      const result = await offeredCollection.findOne({_id: new ObjectId(req.params.id)})
+      res.send(result)
+    })
+
     //post a review on db
     app.post("/reviews", async (req, res) => {
       const review = req.body;
@@ -296,6 +302,21 @@ const run = async () => {
       });
       res.send({ token });
     });
+
+    //create stripe checkout session
+    app.post('/stripe_payment',async(req,res)=>{
+      const { price } = req.body;
+      const amount = parseInt(price * 100);
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: 'usd',
+        payment_method_types: ['card']
+      })
+      res.send({
+        clientSecret: paymentIntent.client_secret,
+      })
+    })
+    
 
     //update a user
     app.patch("/user/:email", async (req, res) => {
