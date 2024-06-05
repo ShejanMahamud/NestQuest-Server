@@ -252,6 +252,12 @@ const run = async () => {
       res.send(result)
     })
 
+    //get sold properties for specific agent
+    app.get('/solds/:email',async(req,res)=>{
+      const result = await offeredCollection.find({agent_email: req.params.email,status:'Bought'}).toArray();
+      res.send(result)
+    })
+
     //post a review on db
     app.post("/reviews", async (req, res) => {
       const review = req.body;
