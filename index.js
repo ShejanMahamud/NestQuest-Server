@@ -6,14 +6,14 @@ const port = process.env.PORT || 4549;
 const mongoURI = process.env.MONGO_URI;
 const jwt = require("jsonwebtoken");
 const secret_token = process.env.ACCESS_TOKEN_SECRET;
-const stripe = require('stripe')(process.env.ST_SECRET_KEY)
+const stripe = require("stripe")(process.env.ST_SECRET_KEY);
 //app
 const app = express();
 
 //middlewares
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5173", "https://nestquest-web.netlify.app"],
   })
 );
 app.use(express.json());
@@ -70,43 +70,60 @@ const run = async () => {
     //get all properties from db based on verified status and agent not fraud
     app.get("/properties", async (req, res) => {
       try {
-        const result = await propertiesCollection
-          .aggregate([
-            {
-              $match: { property_status: "Verified" },
+        let query = { property_status: "Verified" };
+        if (req.query.search) {
+          query.property_location = {
+            $regex: req.query.search || "",
+            $options: "i",
+          };
+        }
+        const pipeline = [
+          {
+            $match: query,
+          },
+          {
+            $lookup: {
+              from: "users",
+              localField: "agent_email",
+              foreignField: "email",
+              as: "agent_info",
             },
-            {
-              $lookup: {
-                from: "users",
-                localField: "agent_email",
-                foreignField: "email",
-                as: "agent_info",
-              },
+          },
+          {
+            $unwind: "$agent_info",
+          },
+          {
+            $match: {
+              "agent_info.status": { $ne: "Fraud" },
             },
-            {
-              $unwind: "$agent_info",
-            },
-            {
-              $match: {
-                "agent_info.status": { $ne: "Fraud" },
-              },
-            },
-            {
-              $project: {
-                agent_info: 0,
-              },
-            },
-          ])
-          .toArray();
+          },
+        ];
+        if (req.query.sort) {
+          pipeline.push({
+            $sort: { property_price_min: 1, property_price_max: 1 },
+          });
+        }
+        pipeline.push({
+          $project: {
+            agent_info: 0,
+          },
+        });
+        const result = await propertiesCollection.aggregate(pipeline).toArray();
         res.send(result);
       } catch (error) {
         res.send({ error: error });
       }
     });
 
+    //properties search
+
     //get all properties with no condition
     app.get("/all_properties", async (req, res) => {
-      const result = await propertiesCollection.find().toArray();
+      let query = {}
+      if(req.query.verified){
+        query = {property_status: 'Verified'}
+      }
+      const result = await propertiesCollection.find(query).toArray();
       res.send(result);
     });
 
@@ -184,10 +201,12 @@ const run = async () => {
     });
 
     //get review based on user
-    app.get('/review/:email',async(req,res) => {
-      const result = await reviewsCollection.find({user_email: req.params.email}).toArray()
-      res.send(result)
-    })
+    app.get("/review/:email", async (req, res) => {
+      const result = await reviewsCollection
+        .find({ user_email: req.params.email })
+        .toArray();
+      res.send(result);
+    });
 
     //get all reviews from db
     app.get("/all_reviews", async (req, res) => {
@@ -209,10 +228,11 @@ const run = async () => {
               review_title: 1,
               review_description: 1,
               review_rating: 1,
-              // property_id: 0,
-              // user_email: 0,
+              property_id: 1,
+              user_email: 1,
               user_name: "$user_info.name",
               user_photo: "$user_info.photo",
+              review_time: 1,
             },
           },
         ])
@@ -227,11 +247,11 @@ const run = async () => {
     });
 
     //get bought properties based on user
-    app.get('/bought/:email',async(req,res)=>{
-      const query = {buyer_email: req.params.email}
+    app.get("/bought/:email", async (req, res) => {
+      const query = { buyer_email: req.params.email };
       const result = await offeredCollection.find(query).toArray();
-      res.send(result)
-    })
+      res.send(result);
+    });
 
     //get wishlists based on user email
     app.get("/wishlist/:email", async (req, res) => {
@@ -241,22 +261,53 @@ const run = async () => {
     });
 
     //get offered properties based on agent email
-    app.get('/requested/:email',async(req,res)=>{
-      const result = await offeredCollection.find({agent_email: req.params.email}).toArray()
-      res.send(result)
-    })
+    app.get("/requested/:email", async (req, res) => {
+      const result = await offeredCollection
+        .find({ agent_email: req.params.email })
+        .toArray();
+      res.send(result);
+    });
 
     //get a offered properties based on id
-    app.get('/offered/:id',async(req,res)=>{
-      const result = await offeredCollection.findOne({_id: new ObjectId(req.params.id)})
-      res.send(result)
-    })
+    app.get("/offered/:id", async (req, res) => {
+      const result = await offeredCollection.findOne({
+        _id: new ObjectId(req.params.id),
+      });
+      res.send(result);
+    });
 
     //get sold properties for specific agent
-    app.get('/solds/:email',async(req,res)=>{
-      const result = await offeredCollection.find({agent_email: req.params.email,status:'Bought'}).toArray();
-      res.send(result)
-    })
+    app.get("/solds/:email", async (req, res) => {
+      const pipeline = [
+        {
+          $match: {
+            agent_email: req.params.email,
+            status: "Bought",
+          },
+        },
+        {
+          $group: {
+            _id: 0,
+            properties: { $push: "$$ROOT" },
+            sold_amount: { $sum: "$offer_price" } // Corrected sum operator
+          }
+        },
+        {
+          $project: {
+            _id: 0,
+            properties: 1,
+            sold_amount: 1
+          }
+        }
+      ];
+      try {
+        const result = await offeredCollection.aggregate(pipeline).toArray();
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ error: error.message });
+      }
+    });
+    
 
     //post a review on db
     app.post("/reviews", async (req, res) => {
@@ -310,19 +361,18 @@ const run = async () => {
     });
 
     //create stripe checkout session
-    app.post('/stripe_payment',async(req,res)=>{
+    app.post("/stripe_payment", async (req, res) => {
       const { price } = req.body;
       const amount = parseInt(price * 100);
       const paymentIntent = await stripe.paymentIntents.create({
         amount: amount,
-        currency: 'usd',
-        payment_method_types: ['card']
-      })
+        currency: "usd",
+        payment_method_types: ["card"],
+      });
       res.send({
         clientSecret: paymentIntent.client_secret,
-      })
-    })
-    
+      });
+    });
 
     //update a user
     app.patch("/user/:email", async (req, res) => {
@@ -368,43 +418,54 @@ const run = async () => {
     });
 
     //change status of offered property
-    app.patch('/offered/:id',async(req,res)=>{
-      if(req.body.status === 'Verified'){
-        const result = await offeredCollection.updateMany({property_id: req.body.property_id},{
-          $set: {status: 'Rejected'}
-        })
+    app.patch("/offered/:id", async (req, res) => {
+      if (req.body.status === "Verified") {
+        const result = await offeredCollection.updateMany(
+          { property_id: req.body.property_id },
+          {
+            $set: { status: "Rejected" },
+          }
+        );
       }
-      const result = await offeredCollection.updateOne({_id: new ObjectId(req.params.id)},{
-        $set: req.body
-      })
-      if(result.modifiedCount > 0){
-        res.send({success: true})
+      const result = await offeredCollection.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        {
+          $set: req.body,
+        }
+      );
+      if (result.modifiedCount > 0) {
+        res.send({ success: true });
       }
-    })
+    });
 
     //delete a review from db
-    app.delete('/review/:id',async(req,res)=>{
-      const result = await reviewsCollection.deleteOne({_id: new ObjectId(req.params.id)})
-      if(result.deletedCount > 0){
-        res.send({success: true})
+    app.delete("/review/:id", async (req, res) => {
+      const result = await reviewsCollection.deleteOne({
+        _id: new ObjectId(req.params.id),
+      });
+      if (result.deletedCount > 0) {
+        res.send({ success: true });
       }
-    })
+    });
     //delete a wishlist property from db
-    app.delete('/wishlist/:id',async(req,res)=>{
-      const result = await wishlistCollection.deleteOne({_id: new ObjectId(req.params.id)})
-      if(result.deletedCount > 0){
-        res.send({success: true})
+    app.delete("/wishlist/:id", async (req, res) => {
+      const result = await wishlistCollection.deleteOne({
+        _id: new ObjectId(req.params.id),
+      });
+      if (result.deletedCount > 0) {
+        res.send({ success: true });
       }
-    })
+    });
 
     //delete a user as admin
-    app.delete('/user/:email',async(req,res)=>{
-      const result = await usersCollection.deleteOne({email: req.params.email})
-      if(result.deletedCount > 0){
-        res.send({success: true})
+    app.delete("/user/:email", async (req, res) => {
+      const result = await usersCollection.deleteOne({
+        email: req.params.email,
+      });
+      if (result.deletedCount > 0) {
+        res.send({ success: true });
       }
-    })
-    
+    });
   } finally {
   }
 };
