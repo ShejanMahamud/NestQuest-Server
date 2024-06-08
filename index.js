@@ -115,13 +115,14 @@ const run = async () => {
       }
     });
 
-    //properties search
-
     //get all properties with no condition
     app.get("/all_properties", async (req, res) => {
       let query = {}
       if(req.query.verified){
         query = {property_status: 'Verified'}
+      }
+      if(req.query.advertise){
+        query = {property_advertise: true}
       }
       const result = await propertiesCollection.find(query).toArray();
       res.send(result);
@@ -400,7 +401,6 @@ const run = async () => {
     app.patch("/property/:id", async (req, res) => {
       try {
         const property = req.body;
-        console.log(property);
         const query = { _id: new ObjectId(req.params.id) };
         const updateProperty = {
           $set: property,
@@ -416,6 +416,15 @@ const run = async () => {
         res.send({ success: false });
       }
     });
+
+    //update a property from admin dash
+    app.patch('/admin_properties/:id',async(req,res)=>{
+      const result = await propertiesCollection.updateOne({_id: new ObjectId(req.params.id)},{$set: req.body})
+      if(result.modifiedCount > 0){
+        res.send({success: true})
+      }
+      
+    })
 
     //change status of offered property
     app.patch("/offered/:id", async (req, res) => {
