@@ -42,6 +42,7 @@ const verifyToken = (req, res, next) => {
   });
 };
 
+
 const run = async () => {
   try {
     //collections
@@ -50,6 +51,7 @@ const run = async () => {
     const reviewsCollection = client.db("nestquest").collection("reviews");
     const wishlistCollection = client.db("nestquest").collection("wishlist");
     const offeredCollection = client.db("nestquest").collection("offered");
+    const reportsCollection = client.db("nestquest").collection("reports");
     const propertiesCollection = client
       .db("nestquest")
       .collection("properties");
@@ -308,7 +310,21 @@ const run = async () => {
         res.status(500).send({ error: error.message });
       }
     });
+
+    //get all reports for admin db
+    app.get('/reports',async(req,res)=> {
+      const result = await reportsCollection.find().toArray()
+      res.send(result)
+    })
     
+    //add a report to db
+    app.post('/reports',async(req,res)=>{
+      const report = req.body;
+      const result = await reportsCollection.insertOne(report)
+      if(result.insertedId){
+        res.send({success: true})
+      }
+    })
 
     //post a review on db
     app.post("/reviews", async (req, res) => {
@@ -456,6 +472,15 @@ const run = async () => {
         res.send({ success: true });
       }
     });
+
+    //delete a report from db
+    app.delete('/report/:id',async(req,res)=>{
+      const result = await reportsCollection.deleteOne({_id: new ObjectId(req.params.id)})
+      if(result.deletedCount > 0){
+        res.send({success: true})
+      }
+    })
+
     //delete a wishlist property from db
     app.delete("/wishlist/:id", async (req, res) => {
       const result = await wishlistCollection.deleteOne({
