@@ -27,6 +27,21 @@ const client = new MongoClient(mongoURI, {
   },
 });
 
+    // middlewares
+    const verifyToken = (req, res, next) => {
+      if (!req.headers.authorization) {
+        return res.status(401).send({ message: "unauthorized access" });
+      }
+      const token = req.headers.authorization.split(" ")[1];
+      jwt.verify(token, secret_token, (err, decoded) => {
+        if (err) {
+          return res.status(401).send({ message: "unauthorized access" });
+        }
+        req.decoded = decoded;
+        next();
+      });
+    };
+
 
 const run = async () => {
   try {
@@ -40,21 +55,6 @@ const run = async () => {
     const propertiesCollection = client
       .db("nestquest")
       .collection("properties");
-
-    // middlewares
-const verifyToken = (req, res, next) => {
-  if (!req.headers.authorization) {
-    return res.status(401).send({ message: "unauthorized access" });
-  }
-  const token = req.headers.authorization.split(" ")[1];
-  jwt.verify(token, secret_token, (err, decoded) => {
-    if (err) {
-      return res.status(401).send({ message: "unauthorized access" });
-    }
-    req.decoded = decoded;
-    next();
-  });
-};
 
 // use verify admin after verifyToken
 const verifyAdmin = async (req, res, next) => {
@@ -280,11 +280,28 @@ const verifyAgent = async (req, res, next) => {
     });
 
     //get bought properties based on user
-    app.get("/bought/:email",verifyToken, async (req, res) => {
-      const query = { buyer_email: req.params.email };
-      const result = await offeredCollection.find(query).toArray();
-      res.send(result);
-    });
+// Get bought properties based on user email
+app.get("/bought/:email", verifyToken, async (req, res) => {
+  try {
+    const email = req.params.email;
+    let query = { buyer_email: email };
+    
+    // If 'bought' query parameter is present, filter by status 'Bought'
+    if (req.query.bought) {
+      query.status = 'Bought';
+    }
+
+    // Fetch properties based on the constructed query
+    const result = await offeredCollection.find(query).toArray();
+
+    // Return the fetched properties
+    res.send(result);
+  } catch (error) {
+    console.error("Error fetching bought properties:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
 
     //get wishlists based on user email
     app.get("/wishlist/:email",verifyToken, async (req, res) => {
@@ -346,6 +363,14 @@ const verifyAgent = async (req, res, next) => {
       const result = await reportsCollection.find().toArray();
       res.send(result);
     });
+
+    //get user dash statistics
+    app.get('/user_stats/:email',verifyToken,async(req,res)=>{
+      const reviewCount = await reviewsCollection.countDocuments({user_email:req.params.email})
+      const boughtCount = await offeredCollection.countDocuments({buyer_email:req.params.email,status:'Bought'})
+      const wishlistCount = await wishlistCollection.countDocuments({user_email:req.params.email})
+      res.send({reviewCount,boughtCount,wishlistCount})
+    })
 
     //add a report to db
     app.post("/reports",verifyToken, async (req, res) => {
@@ -475,7 +500,7 @@ const verifyAgent = async (req, res, next) => {
     });
 
     //change status of offered property as agent
-    app.patch("/offered/:id",verifyToken,verifyAgent, async (req, res) => {
+    app.patch("/offered/:id",verifyToken, async (req, res) => {
       if (req.body.status === "Verified") {
         const result = await offeredCollection.updateMany(
           { property_id: req.body.property_id },
