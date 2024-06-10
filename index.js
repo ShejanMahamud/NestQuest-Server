@@ -371,6 +371,22 @@ app.get("/bought/:email", verifyToken, async (req, res) => {
       const wishlistCount = await wishlistCollection.countDocuments({user_email:req.params.email})
       res.send({reviewCount,boughtCount,wishlistCount})
     })
+    //get admin dash statistics
+    app.get('/admin_stats/:email',verifyToken,async(req,res)=>{
+      const propertiesCount = await propertiesCollection.countDocuments()
+      const usersCount = await usersCollection.countDocuments()
+      const reviewsCount = await reviewsCollection.countDocuments()
+      res.send({propertiesCount,usersCount,reviewsCount})
+    })
+
+    //get agent dash statistics
+    app.get('/agent_stats/:email',verifyToken,async(req,res)=>{
+      const propertiesCount = await propertiesCollection.countDocuments({agent_email:req.params.email})
+      const soldCount = await offeredCollection.countDocuments({agent_email: req.params.email,status: "Bought",})
+      const requestedCount = await offeredCollection.countDocuments({agent_email:req.params.email})
+      const propertiesName = await offeredCollection.find({agent_email: req.params.email,status: "Bought"},{ projection: { property_title: 1, _id: 0,offer_price:1 } }).toArray()
+      res.send({propertiesCount,soldCount,requestedCount,propertyDetails:propertiesName})
+    })
 
     //add a report to db
     app.post("/reports",verifyToken, async (req, res) => {
