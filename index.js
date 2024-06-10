@@ -27,21 +27,6 @@ const client = new MongoClient(mongoURI, {
   },
 });
 
-// middlewares
-const verifyToken = (req, res, next) => {
-  if (!req.headers.authorization) {
-    return res.status(401).send({ message: "unauthorized access" });
-  }
-  const token = req.headers.authorization.split(" ")[1];
-  jwt.verify(token, secret_token, (err, decoded) => {
-    if (err) {
-      return res.status(401).send({ message: "unauthorized access" });
-    }
-    req.decoded = decoded;
-    next();
-  });
-};
-
 
 const run = async () => {
   try {
@@ -56,8 +41,46 @@ const run = async () => {
       .db("nestquest")
       .collection("properties");
 
+    // middlewares
+const verifyToken = (req, res, next) => {
+  if (!req.headers.authorization) {
+    return res.status(401).send({ message: "unauthorized access" });
+  }
+  const token = req.headers.authorization.split(" ")[1];
+  jwt.verify(token, secret_token, (err, decoded) => {
+    if (err) {
+      return res.status(401).send({ message: "unauthorized access" });
+    }
+    req.decoded = decoded;
+    next();
+  });
+};
+
+// use verify admin after verifyToken
+const verifyAdmin = async (req, res, next) => {
+  const email = req.decoded.email;
+  const query = { email: email };
+  const user = await usersCollection.findOne(query);
+  const isAdmin = user?.role === "Admin";
+  if (!isAdmin) {
+    return res.status(403).send({ message: "forbidden access" });
+  }
+  next();
+};
+// use verify agent after verifyToken
+const verifyAgent = async (req, res, next) => {
+  const email = req.decoded.email;
+  const query = { email: email };
+  const user = await usersCollection.findOne(query);
+  const isAdmin = user?.role === "Agent";
+  if (!isAdmin) {
+    return res.status(403).send({ message: "forbidden access" });
+  }
+  next();
+};
+
     //get users from db
-    app.get("/users", async (req, res) => {
+    app.get("/users",verifyToken, async (req, res) => {
       const result = await usersCollection.find().toArray();
       res.send(result);
     });
@@ -119,19 +142,19 @@ const run = async () => {
 
     //get all properties with no condition
     app.get("/all_properties", async (req, res) => {
-      let query = {}
-      if(req.query.verified){
-        query = {property_status: 'Verified'}
+      let query = {};
+      if (req.query.verified) {
+        query = { property_status: "Verified" };
       }
-      if(req.query.advertise){
-        query = {property_advertise: true}
+      if (req.query.advertise) {
+        query = { property_advertise: true };
       }
       const result = await propertiesCollection.find(query).toArray();
       res.send(result);
     });
 
     //get agent based properties
-    app.get("/properties/:email", async (req, res) => {
+    app.get("/properties/:email",verifyToken,verifyAgent, async (req, res) => {
       const query = { agent_email: req.params.email };
       const result = await propertiesCollection.find(query).toArray();
       res.send(result);
@@ -146,7 +169,6 @@ const run = async () => {
 
     //get role for a user
     app.get("/role/:email", verifyToken, async (req, res) => {
-      console.log(req.decoded);
       const query = { email: req.params.email };
       const result = await usersCollection.findOne(query);
       res.send({ role: result.role });
@@ -154,57 +176,65 @@ const run = async () => {
 
     //get reviews from db based on id
     app.get("/reviews/:id", async (req, res) => {
-      const result = await reviewsCollection
-        .aggregate([
-          {
-            $match: { property_id: req.params.id },
-          },
-          {
-            $lookup: {
-              from: "users",
-              localField: "user_email",
-              foreignField: "email",
-              as: "user_info",
+      try {
+        const propertyId = req.params.id;
+        const result = await reviewsCollection
+          .aggregate([
+            {
+              $match: { property_id: propertyId },
             },
-          },
-          {
-            $unwind: "$user_info",
-          },
-          {
-            $project: {
-              review_title: 1,
-              review_description: 1,
-              review_rating: 1,
-              property_id: 1,
-              user_email: 1,
-              user_name: "$user_info.name",
-              user_photo: "$user_info.photo",
+            {
+              $lookup: {
+                from: "users",
+                localField: "user_email",
+                foreignField: "email",
+                as: "user_info",
+              },
             },
-          },
-          {
-            $group: {
-              _id: "$property_id",
-              average_rating: { $avg: "$review_rating" },
-              review_count: { $sum: 1 },
-              reviews: { $push: "$$ROOT" },
+            {
+              $unwind: "$user_info",
             },
-          },
-          {
-            $project: {
-              _id: 0,
-              property_id: "$_id",
-              average_rating: 1,
-              review_count: 1,
-              reviews: 1,
+            {
+              $project: {
+                review_title: 1,
+                review_description: 1,
+                review_rating: 1,
+                property_id: 1,
+                user_email: 1,
+                user_name: "$user_info.name",
+                user_photo: "$user_info.photo",
+              },
             },
-          },
-        ])
-        .toArray();
-      res.send(result);
+            {
+              $group: {
+                _id: "$property_id",
+                average_rating: { $avg: "$review_rating" },
+                review_count: { $sum: 1 },
+                reviews: { $push: "$$ROOT" },
+              },
+            },
+            {
+              $project: {
+                _id: 0,
+                property_id: "$_id",
+                average_rating: 1,
+                review_count: 1,
+                reviews: 1,
+              },
+            },
+          ])
+          .toArray();
+    
+        res.send(result);
+      } catch (error) {
+        console.error('Error fetching reviews:', error);
+        res.status(500).send({ message: error });
+      }
     });
+    
 
     //get review based on user
-    app.get("/review/:email", async (req, res) => {
+    app.get("/review/:email", verifyToken, async (req, res) => {
       const result = await reviewsCollection
         .find({ user_email: req.params.email })
         .toArray();
@@ -250,21 +280,21 @@ const run = async () => {
     });
 
     //get bought properties based on user
-    app.get("/bought/:email", async (req, res) => {
+    app.get("/bought/:email",verifyToken, async (req, res) => {
       const query = { buyer_email: req.params.email };
       const result = await offeredCollection.find(query).toArray();
       res.send(result);
     });
 
     //get wishlists based on user email
-    app.get("/wishlist/:email", async (req, res) => {
+    app.get("/wishlist/:email",verifyToken, async (req, res) => {
       const query = { user_email: req.params.email };
       const result = await wishlistCollection.find(query).toArray();
       res.send(result);
     });
 
     //get offered properties based on agent email
-    app.get("/requested/:email", async (req, res) => {
+    app.get("/requested/:email",verifyToken,verifyAgent, async (req, res) => {
       const result = await offeredCollection
         .find({ agent_email: req.params.email })
         .toArray();
@@ -272,7 +302,7 @@ const run = async () => {
     });
 
     //get a offered properties based on id
-    app.get("/offered/:id", async (req, res) => {
+    app.get("/offered/:id",verifyToken, async (req, res) => {
       const result = await offeredCollection.findOne({
         _id: new ObjectId(req.params.id),
       });
@@ -280,7 +310,7 @@ const run = async () => {
     });
 
     //get sold properties for specific agent
-    app.get("/solds/:email", async (req, res) => {
+    app.get("/solds/:email",verifyToken,verifyAgent, async (req, res) => {
       const pipeline = [
         {
           $match: {
@@ -292,16 +322,16 @@ const run = async () => {
           $group: {
             _id: 0,
             properties: { $push: "$$ROOT" },
-            sold_amount: { $sum: "$offer_price" } // Corrected sum operator
-          }
+            sold_amount: { $sum: "$offer_price" }, // Corrected sum operator
+          },
         },
         {
           $project: {
             _id: 0,
             properties: 1,
-            sold_amount: 1
-          }
-        }
+            sold_amount: 1,
+          },
+        },
       ];
       try {
         const result = await offeredCollection.aggregate(pipeline).toArray();
@@ -312,19 +342,19 @@ const run = async () => {
     });
 
     //get all reports for admin db
-    app.get('/reports',async(req,res)=> {
-      const result = await reportsCollection.find().toArray()
-      res.send(result)
-    })
-    
+    app.get("/reports", async (req, res) => {
+      const result = await reportsCollection.find().toArray();
+      res.send(result);
+    });
+
     //add a report to db
-    app.post('/reports',async(req,res)=>{
+    app.post("/reports",verifyToken, async (req, res) => {
       const report = req.body;
-      const result = await reportsCollection.insertOne(report)
-      if(result.insertedId){
-        res.send({success: true})
+      const result = await reportsCollection.insertOne(report);
+      if (result.insertedId) {
+        res.send({ success: true });
       }
-    })
+    });
 
     //post a review on db
     app.post("/reviews", async (req, res) => {
@@ -336,7 +366,7 @@ const run = async () => {
     });
 
     //set a property as a wishlist
-    app.post("/wishlist", async (req, res) => {
+    app.post("/wishlist",verifyToken, async (req, res) => {
       const wishlist = req.body;
       const result = await wishlistCollection.insertOne(wishlist);
       if (result.insertedId) {
@@ -345,7 +375,7 @@ const run = async () => {
     });
 
     //set a offered property to database
-    app.post("/offered", async (req, res) => {
+    app.post("/offered",verifyToken, async (req, res) => {
       const result = await offeredCollection.insertOne(req.body);
       if (result.insertedId) {
         res.send({ success: true });
@@ -353,7 +383,7 @@ const run = async () => {
     });
 
     //save a property in db
-    app.post("/properties", async (req, res) => {
+    app.post("/properties",verifyToken, async (req, res) => {
       const property = req.body;
       const result = await propertiesCollection.insertOne(property);
       if (result.insertedId) {
@@ -378,7 +408,7 @@ const run = async () => {
     });
 
     //create stripe checkout session
-    app.post("/stripe_payment", async (req, res) => {
+    app.post("/stripe_payment",verifyToken, async (req, res) => {
       const { price } = req.body;
       const amount = parseInt(price * 100);
       const paymentIntent = await stripe.paymentIntents.create({
@@ -392,7 +422,7 @@ const run = async () => {
     });
 
     //update a user
-    app.patch("/user/:email", async (req, res) => {
+    app.patch("/user/:email",verifyToken, async (req, res) => {
       try {
         const user = req.body;
         const query = { email: req.params.email };
@@ -414,7 +444,7 @@ const run = async () => {
     });
 
     //update a property from agent dashbaord
-    app.patch("/property/:id", async (req, res) => {
+    app.patch("/property/:id",verifyToken,verifyAgent, async (req, res) => {
       try {
         const property = req.body;
         const query = { _id: new ObjectId(req.params.id) };
@@ -434,16 +464,18 @@ const run = async () => {
     });
 
     //update a property from admin dash
-    app.patch('/admin_properties/:id',async(req,res)=>{
-      const result = await propertiesCollection.updateOne({_id: new ObjectId(req.params.id)},{$set: req.body})
-      if(result.modifiedCount > 0){
-        res.send({success: true})
+    app.patch("/admin_properties/:id",verifyToken,verifyAdmin, async (req, res) => {
+      const result = await propertiesCollection.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        { $set: req.body }
+      );
+      if (result.modifiedCount > 0) {
+        res.send({ success: true });
       }
-      
-    })
+    });
 
-    //change status of offered property
-    app.patch("/offered/:id", async (req, res) => {
+    //change status of offered property as agent
+    app.patch("/offered/:id",verifyToken,verifyAgent, async (req, res) => {
       if (req.body.status === "Verified") {
         const result = await offeredCollection.updateMany(
           { property_id: req.body.property_id },
@@ -463,8 +495,8 @@ const run = async () => {
       }
     });
 
-    //delete a review from db
-    app.delete("/review/:id", async (req, res) => {
+    //delete a review from db as user
+    app.delete("/review/:id",verifyToken, async (req, res) => {
       const result = await reviewsCollection.deleteOne({
         _id: new ObjectId(req.params.id),
       });
@@ -473,16 +505,18 @@ const run = async () => {
       }
     });
 
-    //delete a report from db
-    app.delete('/report/:id',async(req,res)=>{
-      const result = await reportsCollection.deleteOne({_id: new ObjectId(req.params.id)})
-      if(result.deletedCount > 0){
-        res.send({success: true})
+    //delete a report from db as admin
+    app.delete("/report/:id",verifyToken,verifyAdmin, async (req, res) => {
+      const result = await reportsCollection.deleteOne({
+        _id: new ObjectId(req.params.id),
+      });
+      if (result.deletedCount > 0) {
+        res.send({ success: true });
       }
-    })
+    });
 
-    //delete a wishlist property from db
-    app.delete("/wishlist/:id", async (req, res) => {
+    //delete a wishlist property from db as user
+    app.delete("/wishlist/:id", verifyToken, async (req, res) => {
       const result = await wishlistCollection.deleteOne({
         _id: new ObjectId(req.params.id),
       });
@@ -492,7 +526,7 @@ const run = async () => {
     });
 
     //delete a user as admin
-    app.delete("/user/:email", async (req, res) => {
+    app.delete("/user/:email", verifyToken,verifyAdmin, async (req, res) => {
       const result = await usersCollection.deleteOne({
         email: req.params.email,
       });
