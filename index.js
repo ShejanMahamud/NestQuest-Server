@@ -13,7 +13,7 @@ const app = express();
 //middlewares
 app.use(
   cors({
-    origin: ["http://localhost:5173", "https://nestquest-web.netlify.app"],
+    origin: ["http://localhost:5173", "http://localhost:5174", "https://nestquest-web.netlify.app"],
   })
 );
 app.use(express.json());
@@ -407,7 +407,7 @@ app.get("/bought/:email", verifyToken, async (req, res) => {
     });
 
     //set a property as a wishlist
-    app.post("/wishlist",verifyToken, async (req, res) => {
+    app.post("/wishlist", async (req, res) => {
       const wishlist = req.body;
       const result = await wishlistCollection.insertOne(wishlist);
       if (result.insertedId) {
@@ -485,7 +485,7 @@ app.get("/bought/:email", verifyToken, async (req, res) => {
     });
 
     //update a property from agent dashbaord
-    app.patch("/property/:id",verifyToken,verifyAgent, async (req, res) => {
+    app.patch("/property/:id",verifyToken,verifyAdmin, async (req, res) => {
       try {
         const property = req.body;
         const query = { _id: new ObjectId(req.params.id) };
